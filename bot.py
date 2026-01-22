@@ -4,7 +4,6 @@ import os
 import threading
 from flask import Flask
 from datetime import datetime
-from flask import Flask
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -36,6 +35,8 @@ TERMS_TEXT = (
 
 # ================== التخزين ==================
 def load_json(path, default):
+    if not os.path.exists(path):
+        return default
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -54,7 +55,7 @@ STATES = {}
 async def is_subscribed(uid, bot):
     try:
         m = await bot.get_chat_member(CHANNEL, uid)
-        return m.status in ["member", "administrator", "creator"]
+        return m.status in ("member", "administrator", "creator")
     except:
         return False
 
@@ -108,7 +109,7 @@ async def main_menu(update: Update):
         [InlineKeyboardButton("🛒 السوق", url=f"https://t.me/{CHANNEL.replace('@','')}")],
         [InlineKeyboardButton("➕ نشر عرض", callback_data="post_offer")],
         [InlineKeyboardButton("👥 الإحالات", callback_data="referrals")],
-        [InlineKeyboardButton("📞", callback_data="support")]
+        [InlineKeyboardButton("📞 الدعم", callback_data="support")]
     ]
     await msg.reply_text("🕶️ **طريق الحرير**", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
@@ -148,14 +149,11 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💵 رصيد الإحالات: {u['ref_balance']}$\n"
             f"📈 رصيد العمولة: {u['commission_balance']}$\n\n"
             "💡 كل 50 إحالة = 1$\n"
-            f"💡 عمولة {REF_COMMISSION_PERCENT}% من أرباح الصفقات\n\n"
+            f"💡 عمولة {REF_COMMISSION_PERCENT}%\n\n"
             f"🔗 رابطك:\n{link}"
         )
 
-        kb = [
-    [InlineKeyboardButton("🔗 فتح رابط الإحالة", url=link)],
-    [InlineKeyboardButton("💸 سحب العمولة (قريبًا)", callback_data="withdraw_commission")]
-]
+        kb = [[InlineKeyboardButton("🔗 فتح رابط الإحالة", url=link)]]
 
         await q.message.edit_text(
             text,
@@ -209,7 +207,7 @@ async def photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_photo(
         CHANNEL,
         photo=photo_id,
-        caption=f" عرض جديد\n\n{state['details']}\n💵 {state['price']}",
+        caption=f"📦 عرض جديد\n\n{state['details']}\n💵 {state['price']}",
         reply_markup=InlineKeyboardMarkup(kb)
     )
 
@@ -229,7 +227,7 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("❌ إلغاء", callback_data="cancel")
     ]]
     await update.message.reply_text(
-        f"🔐 صفقه خاصه يتم التحويل الى محفظه الأدره ويحجز المبلغ حتى التأكد ان البائع سلمك العرض اصولا نقوم بتحويل المبلغ اليه في حال اخل البائع بشروط الصفقه المتفق عليها نقوم بأرجاع المبلغ كاملا اذا كنت متأكد من الشراء اضغط موافق ليتم التواصل معك..\n\n{o['details']}\n💵 {o['price']}",
+        f"{o['details']}\n💵 {o['price']}",
         reply_markup=InlineKeyboardMarkup(kb)
     )
 
@@ -248,25 +246,13 @@ async def deal_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text("❌ الصفقة غير موجودة")
             return
 
-        buyer = q.from_user.id
-        ref = users[str(buyer)]["referrer"]
-
-        if ref:
-            commission = (float(o["price"]) * REF_COMMISSION_PERCENT) / 100
-            users[ref]["commission_balance"] += commission
-            save_json(USERS_FILE, users)
-
         await context.bot.send_message(
             ADMIN_ID,
-            f"🧾 طلب شراء\n\n"
-            f"📦 {o['details']}\n"
-            f"💵 {o['price']}\n\n"
-            f"👤 البائع: @{o['seller_username']} | ID: {o['seller_id']}\n"
-            f"👤 المشتري: @{q.from_user.username} | ID: {q.from_user.id}"
+            f"🧾 طلب شراء\n📦 {o['details']}\n💵 {o['price']}"
         )
         await q.message.edit_text("✔️ تم إرسال الطلب")
 
-# ================== KEEP ALIVE (Render) ==================
+# ================== KEEP ALIVE ==================
 def keep_alive():
     web = Flask(__name__)
 
@@ -278,13 +264,7 @@ def keep_alive():
 
 # ================== التشغيل ==================
 def main():
-    app = (
-        ApplicationBuilder()
-        .token(TOKEN)
-        .connect_timeout(60)
-        .read_timeout(60)
-        .build()
-    )
+    app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(deal_buttons, pattern="^(confirm_|cancel)"))
@@ -292,10 +272,10 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, photos))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, texts))
 
-    print("✅ Bot running")
+    threading.Thread(target=keep_alive, daemon=True).start()
 
-    threading.Thread(target=keep_alive).start()
-    app.run_polling()
+    print("✅ Bot running")
+    app.run_polling(close_loop=False)
 
 if __name__ == "__main__":
     main()
