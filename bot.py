@@ -20,7 +20,7 @@ from telegram.ext import (
 )
 
 # ================== الإعدادات ==================
-TOKEN = "PUT_YOUR_TOKEN_HERE"
+TOKEN = "7566025573:AAGBL2Z832qZcrBzR1OJSX89EorkrXsQ4eo"
 ADMIN_ID = 7644436020
 CHANNEL = "@Silk7Road"
 BOT_USERNAME = "silk_7_road_bot"
