@@ -156,7 +156,7 @@ def buttons(update: Update, context: CallbackContext):
     elif q.data == "referrals":
         u = users.get(str(uid))
         if not u:
-            q.message.reply_text("❌ المستخدم غير مسجل")
+            q.message.edit_text("❌ المستخدم غير مسجل")
             return
 
         link = f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
@@ -172,7 +172,7 @@ def buttons(update: Update, context: CallbackContext):
             [InlineKeyboardButton("💸 سحب عمولة الإحالات (قريبًا)", callback_data="withdraw_ref_soon")]
         ]
 
-        q.message.reply_text(
+        q.message.edit_text(
             text,
             reply_markup=InlineKeyboardMarkup(keyboard),
             disable_web_page_preview=True
