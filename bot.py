@@ -154,15 +154,28 @@ def buttons(update: Update, context: CallbackContext):
         q.message.reply_text("✏️ أرسل تفاصيل العرض")
 
     elif q.data == "referrals":
-        u = users.get(str(uid))
-        link = f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
-        text = (
-            f"👥 عدد الإحالات: {u['referrals']}\n"
-            f"💵 رصيد الإحالات: {u['ref_balance']}$\n"
-            f"📈 رصيد العمولة: {u['commission_balance']}$\n\n"
-            f"🔗 رابطك:\n{link}"
-        )
-        q.message.edit_text(text, disable_web_page_preview=True)
+    u = users.get(str(uid))
+    if not u:
+        q.message.reply_text("❌ المستخدم غير مسجل")
+        return
+
+    link = f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
+    text = (
+        f"👥 عدد الإحالات: {u['referrals']}\n"
+        f"💵 رصيد الإحالات: {u['ref_balance']}$\n"
+        f"📈 رصيد العمولة: {u['commission_balance']}$\n\n"
+        f"🔗 رابطك:\n{link}"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("💸 سحب عمولة الإحالات (قريبًا)", callback_data="withdraw_ref_soon")]
+    ]
+
+    q.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        disable_web_page_preview=True
+    )
 
 # ================== النصوص ==================
 def texts(update: Update, context: CallbackContext):
