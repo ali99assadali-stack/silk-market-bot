@@ -27,7 +27,7 @@ from telegram.ext import (
 )
 
 # ================== الإعدادات ==================
-TOKEN = "7566025573:AAGBL2Z832qZcrBzR1OJSX89EorkrXsQ4eo"
+TOKEN = "7566025573:AAG3JpPi97UlQ0H5x7QdbxtFuUObo5DVUDw"
 ADMIN_ID = 7644436020
 CHANNEL = "@Silk7Road"
 BOT_USERNAME = "silk_7_road_bot"
@@ -84,6 +84,7 @@ def start(update: Update, context: CallbackContext):
         "ref_balance": 0,
         "commission_balance": 0
     })
+    save_json(USERS_FILE, users)
 
     if args:
         if args[0].startswith("ref_"):
@@ -153,12 +154,12 @@ def buttons(update: Update, context: CallbackContext):
         q.message.reply_text("✏️ أرسل تفاصيل العرض")
 
     elif q.data == "referrals":
-        u = users[str(uid)]
+        u = users.get(str(uid))
         link = f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
         text = (
-            f"👥 الإحالات: {u['referrals']}\n"
-            f"💵 الرصيد: {u['ref_balance']}$\n"
-            f"📈 العمولة: {u['commission_balance']}$\n\n"
+            f"👥 عدد الإحالات: {u['referrals']}\n"
+            f"💵 رصيد الإحالات: {u['ref_balance']}$\n"
+            f"📈 رصيد العمولة: {u['commission_balance']}$\n\n"
             f"🔗 رابطك:\n{link}"
         )
         q.message.edit_text(text, disable_web_page_preview=True)
@@ -245,9 +246,27 @@ def deal_buttons(update: Update, context: CallbackContext):
             q.message.edit_text("❌ غير موجود")
             return
 
+        buyer = q.from_user
+        seller = context.bot.get_chat(o["seller_id"])
+
         context.bot.send_message(
             ADMIN_ID,
-            f"🧾 طلب شراء\n{o['details']}\n💵 {o['price']}"
+            f"""🧾 طلب شراء
+
+👤 الشاري:
+الاسم: {buyer.first_name}
+المعرف: @{buyer.username if buyer.username else 'بدون'}
+ID: {buyer.id}
+
+👤 البائع:
+الاسم: {seller.first_name}
+المعرف: @{seller.username if seller.username else 'بدون'}
+ID: {seller.id}
+
+📦 العرض:
+{o['details']}
+💵 السعر: {o['price']}
+"""
         )
         q.message.edit_text("✔️ تم إرسال الطلب")
 
