@@ -1,3 +1,10 @@
+import sys
+import types
+
+# ===== FIX imghdr (Python 3.13 on Render) =====
+if sys.version_info >= (3, 13):
+    sys.modules['imghdr'] = types.ModuleType('imghdr')
+
 import json
 import time
 import os
@@ -197,9 +204,12 @@ def photos(update: Update, context: CallbackContext):
     save_json(OFFERS_FILE, offers)
 
     kb = [[InlineKeyboardButton("🔐 دخول الصفقة", url=f"https://t.me/{BOT_USERNAME}?start=deal_{oid}")]]
-    context.bot.send_photo(CHANNEL, photo=photo_id,
-                           caption=f"{state['details']}\n💵 {state['price']}",
-                           reply_markup=InlineKeyboardMarkup(kb))
+    context.bot.send_photo(
+        CHANNEL,
+        photo=photo_id,
+        caption=f"{state['details']}\n💵 {state['price']}",
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
 
     update.message.reply_text("✔️ تم نشر العرض")
     STATES.pop(uid)
@@ -216,8 +226,10 @@ def start_deal(update: Update, context: CallbackContext):
         InlineKeyboardButton("✅ موافق", callback_data=f"confirm_{code}"),
         InlineKeyboardButton("❌ إلغاء", callback_data="cancel")
     ]]
-    update.message.reply_text(f"{o['details']}\n💵 {o['price']}",
-                              reply_markup=InlineKeyboardMarkup(kb))
+    update.message.reply_text(
+        f"{o['details']}\n💵 {o['price']}",
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
 
 def deal_buttons(update: Update, context: CallbackContext):
     q = update.callback_query
