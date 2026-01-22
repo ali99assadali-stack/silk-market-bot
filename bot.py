@@ -12,11 +12,7 @@ import threading
 from datetime import datetime
 from flask import Flask
 
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Updater,
     CommandHandler,
@@ -37,7 +33,6 @@ USERS_FILE = "users.json"
 
 REF_REWARD_PER = 50
 REF_REWARD_AMOUNT = 1
-REF_COMMISSION_PERCENT = 5
 
 # ================== الشروط ==================
 TERMS_TEXT = (
@@ -72,9 +67,9 @@ def is_subscribed(bot, user_id):
     except:
         return False
 
-# ================== القائمة ==================
+# ================== القائمة الرئيسية ==================
 def main_menu(update: Update):
-    keyboard = InlineKeyboardMarkup([
+    kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 السوق", url=f"https://t.me/{CHANNEL.replace('@','')}")],
         [InlineKeyboardButton("➕ نشر عرض", callback_data="post_offer")],
         [InlineKeyboardButton("👥 الإحالات", callback_data="referrals")],
@@ -84,13 +79,13 @@ def main_menu(update: Update):
     if update.callback_query:
         update.callback_query.message.edit_text(
             "🕶️ *طريق الحرير*",
-            reply_markup=keyboard,
+            reply_markup=kb,
             parse_mode="Markdown"
         )
     else:
         update.message.reply_text(
             "🕶️ *طريق الحرير*",
-            reply_markup=keyboard,
+            reply_markup=kb,
             parse_mode="Markdown"
         )
 
@@ -103,25 +98,19 @@ def start(update: Update, context: CallbackContext):
         "accepted": False,
         "referrer": None,
         "referrals": 0,
-        "ref_balance": 0,
-        "commission_balance": 0
+        "ref_balance": 0
     })
     save_json(USERS_FILE, users)
 
-    if args:
-        if args[0].startswith("ref_"):
-            ref_id = args[0].replace("ref_", "")
-            if ref_id != str(uid) and users[str(uid)]["referrer"] is None:
-                if ref_id in users:
-                    users[str(uid)]["referrer"] = ref_id
-                    users[ref_id]["referrals"] += 1
-                    if users[ref_id]["referrals"] % REF_REWARD_PER == 0:
-                        users[ref_id]["ref_balance"] += REF_REWARD_AMOUNT
-                    save_json(USERS_FILE, users)
-
-        if args[0].startswith("deal_"):
-            start_deal(update, context)
-            return
+    if args and args[0].startswith("ref_"):
+        ref_id = args[0].replace("ref_", "")
+        if ref_id in users and ref_id != str(uid):
+            if users[str(uid)]["referrer"] is None:
+                users[str(uid)]["referrer"] = ref_id
+                users[ref_id]["referrals"] += 1
+                if users[ref_id]["referrals"] % REF_REWARD_PER == 0:
+                    users[ref_id]["ref_balance"] += REF_REWARD_AMOUNT
+                save_json(USERS_FILE, users)
 
     if not is_subscribed(context.bot, uid):
         kb = InlineKeyboardMarkup([
@@ -140,7 +129,30 @@ def start(update: Update, context: CallbackContext):
 
     main_menu(update)
 
-# ================== الأزرار ==================
+# ================== زر الإحالات (HANDLER مستقل) ==================
+def referrals_handler(update: Update, context: CallbackContext):
+    q = update.callback_query
+    uid = q.from_user.id
+    q.answer()
+
+    u = users.get(str(uid))
+    if not u:
+        q.message.edit_text("❌ المستخدم غير مسجل")
+        return
+
+    link = f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
+
+    q.message.edit_text(
+        f"👥 عدد الإحالات: {u['referrals']}\n"
+        f"💰 رصيد الإحالات: {u['ref_balance']}$\n\n"
+        f"🔗 رابطك:\n{link}",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ رجوع", callback_data="back_main")]
+        ]),
+        disable_web_page_preview=True
+    )
+
+# ================== الأزرار العامة ==================
 def buttons(update: Update, context: CallbackContext):
     q = update.callback_query
     uid = q.from_user.id
@@ -166,29 +178,6 @@ def buttons(update: Update, context: CallbackContext):
         STATES[uid] = {"step": "details"}
         q.message.edit_text("✏️ أرسل تفاصيل العرض")
 
-    elif q.data == "referrals":
-        u = users.get(str(uid))
-        if not u:
-            q.message.edit_text("❌ المستخدم غير مسجل")
-            return
-
-        link = f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
-
-        text = (
-            f"👥 عدد الإحالات: {u['referrals']}\n"
-            f"💰 رصيد الإحالات: {u['ref_balance']}$\n"
-            f"📈 رصيد العمولة: {u['commission_balance']}$\n\n"
-            f"🔗 رابطك:\n{link}"
-        )
-
-        q.message.edit_text(
-            text,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ رجوع", callback_data="back_main")]
-            ]),
-            disable_web_page_preview=True
-        )
-
     elif q.data == "back_main":
         main_menu(update)
 
@@ -198,37 +187,30 @@ def texts(update: Update, context: CallbackContext):
     if uid not in STATES:
         return
 
-    state = STATES[uid]
-
-    if state["step"] == "details":
-        state["details"] = update.message.text
-        state["step"] = "price"
+    if STATES[uid]["step"] == "details":
+        STATES[uid]["details"] = update.message.text
+        STATES[uid]["step"] = "price"
         update.message.reply_text("💵 أرسل السعر")
 
-    elif state["step"] == "price":
-        state["price"] = update.message.text
-        state["step"] = "photo"
+    elif STATES[uid]["step"] == "price":
+        STATES[uid]["price"] = update.message.text
+        STATES[uid]["step"] = "photo"
         update.message.reply_text("🖼️ أرسل صورة")
 
 # ================== الصور ==================
 def photos(update: Update, context: CallbackContext):
     uid = update.effective_user.id
-    if uid not in STATES:
-        return
-
-    state = STATES[uid]
-    if state["step"] != "photo":
+    if uid not in STATES or STATES[uid]["step"] != "photo":
         return
 
     photo_id = update.message.photo[-1].file_id
     oid = str(int(time.time()))
 
     offers[oid] = {
-        "details": state["details"],
-        "price": state["price"],
+        "details": STATES[uid]["details"],
+        "price": STATES[uid]["price"],
         "photo": photo_id,
-        "seller_id": uid,
-        "created": datetime.now().isoformat()
+        "seller_id": uid
     }
     save_json(OFFERS_FILE, offers)
 
@@ -239,70 +221,12 @@ def photos(update: Update, context: CallbackContext):
     context.bot.send_photo(
         CHANNEL,
         photo=photo_id,
-        caption=f"{state['details']}\n💵 {state['price']}",
+        caption=f"{STATES[uid]['details']}\n💵 {STATES[uid]['price']}",
         reply_markup=kb
     )
 
     update.message.reply_text("✔️ تم نشر العرض")
     STATES.pop(uid)
-
-# ================== الصفقة ==================
-def start_deal(update: Update, context: CallbackContext):
-    code = context.args[0].replace("deal_", "")
-    if code not in offers:
-        update.message.reply_text("❌ العرض غير موجود")
-        return
-
-    o = offers[code]
-    kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✅ موافق", callback_data=f"confirm_{code}"),
-            InlineKeyboardButton("❌ إلغاء", callback_data="cancel")
-        ]
-    ])
-
-    update.message.reply_text(
-        f"{o['details']}\n💵 {o['price']}",
-        reply_markup=kb
-    )
-
-def deal_buttons(update: Update, context: CallbackContext):
-    q = update.callback_query
-    q.answer()
-
-    if q.data == "cancel":
-        q.message.edit_text("❌ ألغيت")
-
-    elif q.data.startswith("confirm_"):
-        oid = q.data.replace("confirm_", "")
-        o = offers.get(oid)
-        if not o:
-            q.message.edit_text("❌ غير موجود")
-            return
-
-        buyer = q.from_user
-        seller = context.bot.get_chat(o["seller_id"])
-
-        context.bot.send_message(
-            ADMIN_ID,
-            f"""🧾 طلب شراء
-
-👤 الشاري:
-الاسم: {buyer.first_name}
-المعرف: @{buyer.username if buyer.username else 'بدون'}
-ID: {buyer.id}
-
-👤 البائع:
-الاسم: {seller.first_name}
-المعرف: @{seller.username if seller.username else 'بدون'}
-ID: {seller.id}
-
-📦 العرض:
-{o['details']}
-💵 السعر: {o['price']}
-"""
-        )
-        q.message.edit_text("✔️ تم إرسال الطلب")
 
 # ================== KEEP ALIVE ==================
 def keep_alive():
@@ -320,8 +244,11 @@ def main():
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CallbackQueryHandler(deal_buttons, pattern="^(confirm_|cancel)"))
+
+    # مهم: ترتيب الـ handlers
+    dp.add_handler(CallbackQueryHandler(referrals_handler, pattern="^referrals$"))
     dp.add_handler(CallbackQueryHandler(buttons))
+
     dp.add_handler(MessageHandler(Filters.photo, photos))
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, texts))
 
