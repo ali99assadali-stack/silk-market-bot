@@ -1,10 +1,3 @@
-import sys
-import types
-
-# ===== FIX imghdr (Python 3.13 on Render) =====
-if sys.version_info >= (3, 13):
-    sys.modules['imghdr'] = types.ModuleType('imghdr')
-
 import json
 import time
 import os
@@ -14,16 +7,12 @@ from flask import Flask
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Updater,
-    CommandHandler,
-    CallbackQueryHandler,
-    MessageHandler,
-    Filters,
-    CallbackContext
+    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
+    MessageHandler, ContextTypes, filters
 )
 
 # ================== الإعدادات ==================
-TOKEN = "7566025573:AAG3JpPi97UlQ0H5x7QdbxtFuUObo5DVUDw"
+TOKEN = "7566025573:AAGzFF5CJX28k--RPdECCJD_6aaxoCZ0G2c"
 ADMIN_ID = 7644436020
 CHANNEL = "@Silk7Road"
 BOT_USERNAME = "silk_7_road_bot"
@@ -33,10 +22,11 @@ USERS_FILE = "users.json"
 
 REF_REWARD_PER = 50
 REF_REWARD_AMOUNT = 1
+REF_COMMISSION_PERCENT = 5
 
-# ================== الشروط ==================
+# ================== نص الشروط ==================
 TERMS_TEXT = (
-    "🕶️ *طريق الحرير*\n\n"
+    "🕶️ **طريق الحرير**\n\n"
     "سوق مجهول الهوية.\n"
     "لا أسماء، لا أسئلة.\n\n"
     "كل صفقة مسؤولية أصحابها.\n"
@@ -60,37 +50,15 @@ users = load_json(USERS_FILE, {})
 STATES = {}
 
 # ================== تحقق الاشتراك ==================
-def is_subscribed(bot, user_id):
+async def is_subscribed(uid, bot):
     try:
-        m = bot.get_chat_member(CHANNEL, user_id)
+        m = await bot.get_chat_member(CHANNEL, uid)
         return m.status in ["member", "administrator", "creator"]
     except:
         return False
 
-# ================== القائمة الرئيسية ==================
-def main_menu(update: Update):
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🛒 السوق", url=f"https://t.me/{CHANNEL.replace('@','')}")],
-        [InlineKeyboardButton("➕ نشر عرض", callback_data="post_offer")],
-        [InlineKeyboardButton("👥 الإحالات", callback_data="referrals")],
-        [InlineKeyboardButton("📞 الدعم", callback_data="support")]
-    ])
-
-    if update.callback_query:
-        update.callback_query.message.edit_text(
-            "🕶️ *طريق الحرير*",
-            reply_markup=kb,
-            parse_mode="Markdown"
-        )
-    else:
-        update.message.reply_text(
-            "🕶️ *طريق الحرير*",
-            reply_markup=kb,
-            parse_mode="Markdown"
-        )
-
 # ================== /start ==================
-def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     args = context.args
 
@@ -98,163 +66,236 @@ def start(update: Update, context: CallbackContext):
         "accepted": False,
         "referrer": None,
         "referrals": 0,
-        "ref_balance": 0
+        "ref_balance": 0,
+        "commission_balance": 0
     })
-    save_json(USERS_FILE, users)
 
-    if args and args[0].startswith("ref_"):
-        ref_id = args[0].replace("ref_", "")
-        if ref_id in users and ref_id != str(uid):
-            if users[str(uid)]["referrer"] is None:
-                users[str(uid)]["referrer"] = ref_id
-                users[ref_id]["referrals"] += 1
-                if users[ref_id]["referrals"] % REF_REWARD_PER == 0:
-                    users[ref_id]["ref_balance"] += REF_REWARD_AMOUNT
-                save_json(USERS_FILE, users)
+    if args:
+        if args[0].startswith("ref_"):
+            ref_id = args[0].replace("ref_", "")
+            if ref_id != str(uid) and users[str(uid)]["referrer"] is None:
+                if ref_id in users:
+                    users[str(uid)]["referrer"] = ref_id
+                    users[ref_id]["referrals"] += 1
+                    if users[ref_id]["referrals"] % REF_REWARD_PER == 0:
+                        users[ref_id]["ref_balance"] += REF_REWARD_AMOUNT
+                    save_json(USERS_FILE, users)
 
-    if not is_subscribed(context.bot, uid):
-        kb = InlineKeyboardMarkup([
+        if args[0].startswith("deal_"):
+            await start_deal(update, context)
+            return
+
+    if not await is_subscribed(uid, context.bot):
+        kb = [
             [InlineKeyboardButton("📢 الاشتراك بالقناة", url=f"https://t.me/{CHANNEL.replace('@','')}")],
-            [InlineKeyboardButton("🔔 تحقق", callback_data="check_sub")]
-        ])
-        update.message.reply_text("🔒 اشترك بالقناة أولاً", reply_markup=kb)
+            [InlineKeyboardButton("🔔 تحقق من الاشتراك", callback_data="check_sub")]
+        ]
+        await update.message.reply_text("🔒 لازم تشترك بالقناة أولاً", reply_markup=InlineKeyboardMarkup(kb))
         return
 
     if not users[str(uid)]["accepted"]:
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ أوافق", callback_data="accept_terms")]
-        ])
-        update.message.reply_text(TERMS_TEXT, reply_markup=kb, parse_mode="Markdown")
+        kb = [[InlineKeyboardButton("✅ أوافق وأدخل السوق", callback_data="accept_terms")]]
+        await update.message.reply_text(TERMS_TEXT, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
         return
 
-    main_menu(update)
+    await main_menu(update)
 
-# ================== زر الإحالات (HANDLER مستقل) ==================
-def referrals_handler(update: Update, context: CallbackContext):
+# ================== القائمة ==================
+async def main_menu(update: Update):
+    msg = update.message or update.callback_query.message
+    kb = [
+        [InlineKeyboardButton("🛒 السوق", url=f"https://t.me/{CHANNEL.replace('@','')}")],
+        [InlineKeyboardButton("➕ نشر عرض", callback_data="post_offer")],
+        [InlineKeyboardButton("👥 الإحالات", callback_data="referrals")],
+        [InlineKeyboardButton("📞", callback_data="support")]
+    ]
+    await msg.reply_text("🕶️ **طريق الحرير**", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+# ================== الأزرار ==================
+async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     uid = q.from_user.id
-    q.answer()
-
-    u = users.get(str(uid))
-    if not u:
-        q.message.edit_text("❌ المستخدم غير مسجل")
-        return
-
-    link = f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
-
-    q.message.edit_text(
-        f"👥 عدد الإحالات: {u['referrals']}\n"
-        f"💰 رصيد الإحالات: {u['ref_balance']}$\n\n"
-        f"🔗 رابطك:\n{link}",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ رجوع", callback_data="back_main")]
-        ]),
-        disable_web_page_preview=True
-    )
-
-# ================== الأزرار العامة ==================
-def buttons(update: Update, context: CallbackContext):
-    q = update.callback_query
-    uid = q.from_user.id
-    q.answer()
+    await q.answer()
 
     if q.data == "check_sub":
-        if is_subscribed(context.bot, uid):
-            q.message.edit_text("✔️ تم التحقق")
-            main_menu(update)
+        if await is_subscribed(uid, context.bot):
+            await q.message.edit_text("✔️ تم التحقق")
+            await main_menu(update)
         else:
-            q.message.reply_text("❌ اشترك بالقناة")
+            await q.message.reply_text("❌ اشترك بالقناة ثم أعد المحاولة")
 
     elif q.data == "accept_terms":
         users[str(uid)]["accepted"] = True
         save_json(USERS_FILE, users)
-        q.message.edit_text("✔️ أهلاً بك")
-        main_menu(update)
+        await q.message.edit_text("✔️ أهلاً بك في السوق")
+        await main_menu(update)
 
     elif q.data == "support":
-        q.message.reply_text("https://t.me/Silk_RoadTeam")
+        await q.message.reply_text("https://t.me/Silk_RoadTeam")
 
     elif q.data == "post_offer":
         STATES[uid] = {"step": "details"}
-        q.message.edit_text("✏️ أرسل تفاصيل العرض")
+        await q.message.reply_text("✏️ أرسل تفاصيل العرض")
 
-    elif q.data == "back_main":
-        main_menu(update)
+    elif q.data == "referrals":
+        u = users[str(uid)]
+        link = f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
+
+        text = (
+            "👥 **نظام الإحالات**\n\n"
+            f"👤 عدد الإحالات: {u['referrals']}\n"
+            f"💵 رصيد الإحالات: {u['ref_balance']}$\n"
+            f"📈 رصيد العمولة: {u['commission_balance']}$\n\n"
+            "💡 كل 50 إحالة = 1$\n"
+            f"💡 عمولة {REF_COMMISSION_PERCENT}% من أرباح الصفقات\n\n"
+            f"🔗 رابطك:\n{link}"
+        )
+
+        kb = [
+    [InlineKeyboardButton("🔗 فتح رابط الإحالة", url=link)],
+    [InlineKeyboardButton("💸 سحب العمولة (قريبًا)", callback_data="withdraw_commission")]
+]
+
+        await q.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown",
+            disable_web_page_preview=True
+        )
 
 # ================== النصوص ==================
-def texts(update: Update, context: CallbackContext):
+async def texts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if uid not in STATES:
         return
 
-    if STATES[uid]["step"] == "details":
-        STATES[uid]["details"] = update.message.text
-        STATES[uid]["step"] = "price"
-        update.message.reply_text("💵 أرسل السعر")
+    state = STATES[uid]
 
-    elif STATES[uid]["step"] == "price":
-        STATES[uid]["price"] = update.message.text
-        STATES[uid]["step"] = "photo"
-        update.message.reply_text("🖼️ أرسل صورة")
+    if state["step"] == "details":
+        state["details"] = update.message.text
+        state["step"] = "price"
+        await update.message.reply_text("💵 أرسل السعر")
+
+    elif state["step"] == "price":
+        state["price"] = update.message.text
+        state["step"] = "photo"
+        await update.message.reply_text("🖼️ أرسل صورة العرض")
 
 # ================== الصور ==================
-def photos(update: Update, context: CallbackContext):
+async def photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    if uid not in STATES or STATES[uid]["step"] != "photo":
+    if uid not in STATES:
+        return
+
+    state = STATES[uid]
+    if state["step"] != "photo":
         return
 
     photo_id = update.message.photo[-1].file_id
     oid = str(int(time.time()))
 
     offers[oid] = {
-        "details": STATES[uid]["details"],
-        "price": STATES[uid]["price"],
+        "details": state["details"],
+        "price": state["price"],
         "photo": photo_id,
-        "seller_id": uid
+        "seller_id": uid,
+        "seller_username": update.effective_user.username,
+        "created": datetime.now().isoformat()
     }
     save_json(OFFERS_FILE, offers)
 
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔐 دخول الصفقة", url=f"https://t.me/{BOT_USERNAME}?start=deal_{oid}")]
-    ])
-
-    context.bot.send_photo(
+    kb = [[InlineKeyboardButton("🔐 دخول الصفقة", url=f"https://t.me/{BOT_USERNAME}?start=deal_{oid}")]]
+    await context.bot.send_photo(
         CHANNEL,
         photo=photo_id,
-        caption=f"{STATES[uid]['details']}\n💵 {STATES[uid]['price']}",
-        reply_markup=kb
+        caption=f" عرض جديد\n\n{state['details']}\n💵 {state['price']}",
+        reply_markup=InlineKeyboardMarkup(kb)
     )
 
-    update.message.reply_text("✔️ تم نشر العرض")
+    await update.message.reply_text("✔️ تم نشر العرض")
     STATES.pop(uid)
 
-# ================== KEEP ALIVE ==================
-def keep_alive():
-    app = Flask(__name__)
+# ================== دخول الصفقة ==================
+async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    code = context.args[0].replace("deal_", "")
+    if code not in offers:
+        await update.message.reply_text("❌ العرض غير موجود")
+        return
 
-    @app.route("/")
+    o = offers[code]
+    kb = [[
+        InlineKeyboardButton("✅ موافق", callback_data=f"confirm_{code}"),
+        InlineKeyboardButton("❌ إلغاء", callback_data="cancel")
+    ]]
+    await update.message.reply_text(
+        f"🔐 صفقه خاصه يتم التحويل الى محفظه الأدره ويحجز المبلغ حتى التأكد ان البائع سلمك العرض اصولا نقوم بتحويل المبلغ اليه في حال اخل البائع بشروط الصفقه المتفق عليها نقوم بأرجاع المبلغ كاملا اذا كنت متأكد من الشراء اضغط موافق ليتم التواصل معك..\n\n{o['details']}\n💵 {o['price']}",
+        reply_markup=InlineKeyboardMarkup(kb)
+    )
+
+# ================== أزرار الصفقة ==================
+async def deal_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+
+    if q.data == "cancel":
+        await q.message.edit_text("❌ ألغيت")
+
+    elif q.data.startswith("confirm_"):
+        oid = q.data.replace("confirm_", "")
+        o = offers.get(oid)
+        if not o:
+            await q.message.edit_text("❌ الصفقة غير موجودة")
+            return
+
+        buyer = q.from_user.id
+        ref = users[str(buyer)]["referrer"]
+
+        if ref:
+            commission = (float(o["price"]) * REF_COMMISSION_PERCENT) / 100
+            users[ref]["commission_balance"] += commission
+            save_json(USERS_FILE, users)
+
+        await context.bot.send_message(
+            ADMIN_ID,
+            f"🧾 طلب شراء\n\n"
+            f"📦 {o['details']}\n"
+            f"💵 {o['price']}\n\n"
+            f"👤 البائع: @{o['seller_username']} | ID: {o['seller_id']}\n"
+            f"👤 المشتري: @{q.from_user.username} | ID: {q.from_user.id}"
+        )
+        await q.message.edit_text("✔️ تم إرسال الطلب")
+
+# ================== KEEP ALIVE (Render) ==================
+def keep_alive():
+    web = Flask(__name__)
+
+    @web.route("/")
     def home():
         return "Bot is running"
 
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    web.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 # ================== التشغيل ==================
 def main():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    app = (
+        ApplicationBuilder()
+        .token(TOKEN)
+        .connect_timeout(60)
+        .read_timeout(60)
+        .build()
+    )
 
-    dp.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(deal_buttons, pattern="^(confirm_|cancel)"))
+    app.add_handler(CallbackQueryHandler(buttons))
+    app.add_handler(MessageHandler(filters.PHOTO, photos))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, texts))
 
-    # مهم: ترتيب الـ handlers
-    dp.add_handler(CallbackQueryHandler(referrals_handler, pattern="^referrals$"))
-    dp.add_handler(CallbackQueryHandler(buttons))
-
-    dp.add_handler(MessageHandler(Filters.photo, photos))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, texts))
+    print("✅ Bot running")
 
     threading.Thread(target=keep_alive).start()
-    updater.start_polling()
-    updater.idle()
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
+    
