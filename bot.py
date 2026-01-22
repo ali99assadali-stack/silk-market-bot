@@ -72,6 +72,28 @@ def is_subscribed(bot, user_id):
     except:
         return False
 
+# ================== القائمة ==================
+def main_menu(update: Update):
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🛒 السوق", url=f"https://t.me/{CHANNEL.replace('@','')}")],
+        [InlineKeyboardButton("➕ نشر عرض", callback_data="post_offer")],
+        [InlineKeyboardButton("👥 الإحالات", callback_data="referrals")],
+        [InlineKeyboardButton("📞 الدعم", callback_data="support")]
+    ])
+
+    if update.callback_query:
+        update.callback_query.message.edit_text(
+            "🕶️ *طريق الحرير*",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+    else:
+        update.message.reply_text(
+            "🕶️ *طريق الحرير*",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+
 # ================== /start ==================
 def start(update: Update, context: CallbackContext):
     uid = update.effective_user.id
@@ -102,30 +124,21 @@ def start(update: Update, context: CallbackContext):
             return
 
     if not is_subscribed(context.bot, uid):
-        kb = [
+        kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("📢 الاشتراك بالقناة", url=f"https://t.me/{CHANNEL.replace('@','')}")],
             [InlineKeyboardButton("🔔 تحقق", callback_data="check_sub")]
-        ]
-        update.message.reply_text("🔒 اشترك بالقناة أولاً", reply_markup=InlineKeyboardMarkup(kb))
+        ])
+        update.message.reply_text("🔒 اشترك بالقناة أولاً", reply_markup=kb)
         return
 
     if not users[str(uid)]["accepted"]:
-        kb = [[InlineKeyboardButton("✅ أوافق", callback_data="accept_terms")]]
-        update.message.reply_text(TERMS_TEXT, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ أوافق", callback_data="accept_terms")]
+        ])
+        update.message.reply_text(TERMS_TEXT, reply_markup=kb, parse_mode="Markdown")
         return
 
     main_menu(update)
-
-# ================== القائمة ==================
-def main_menu(update: Update):
-    msg = update.message or update.callback_query.message
-    kb = [
-        [InlineKeyboardButton("🛒 السوق", url=f"https://t.me/{CHANNEL.replace('@','')}")],
-        [InlineKeyboardButton("➕ نشر عرض", callback_data="post_offer")],
-        [InlineKeyboardButton("👥 الإحالات", callback_data="referrals")],
-        [InlineKeyboardButton("📞 الدعم", callback_data="support")]
-    ]
-    msg.reply_text("🕶️ *طريق الحرير*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
 # ================== الأزرار ==================
 def buttons(update: Update, context: CallbackContext):
@@ -151,7 +164,7 @@ def buttons(update: Update, context: CallbackContext):
 
     elif q.data == "post_offer":
         STATES[uid] = {"step": "details"}
-        q.message.reply_text("✏️ أرسل تفاصيل العرض")
+        q.message.edit_text("✏️ أرسل تفاصيل العرض")
 
     elif q.data == "referrals":
         u = users.get(str(uid))
@@ -168,15 +181,16 @@ def buttons(update: Update, context: CallbackContext):
             f"🔗 رابطك:\n{link}"
         )
 
-        keyboard = [
-            [InlineKeyboardButton("💸 سحب عمولة الإحالات (قريبًا)", callback_data="withdraw_ref_soon")]
-        ]
-
         q.message.edit_text(
             text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ رجوع", callback_data="back_main")]
+            ]),
             disable_web_page_preview=True
         )
+
+    elif q.data == "back_main":
+        main_menu(update)
 
 # ================== النصوص ==================
 def texts(update: Update, context: CallbackContext):
@@ -218,12 +232,15 @@ def photos(update: Update, context: CallbackContext):
     }
     save_json(OFFERS_FILE, offers)
 
-    kb = [[InlineKeyboardButton("🔐 دخول الصفقة", url=f"https://t.me/{BOT_USERNAME}?start=deal_{oid}")]]
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔐 دخول الصفقة", url=f"https://t.me/{BOT_USERNAME}?start=deal_{oid}")]
+    ])
+
     context.bot.send_photo(
         CHANNEL,
         photo=photo_id,
         caption=f"{state['details']}\n💵 {state['price']}",
-        reply_markup=InlineKeyboardMarkup(kb)
+        reply_markup=kb
     )
 
     update.message.reply_text("✔️ تم نشر العرض")
@@ -237,13 +254,16 @@ def start_deal(update: Update, context: CallbackContext):
         return
 
     o = offers[code]
-    kb = [[
-        InlineKeyboardButton("✅ موافق", callback_data=f"confirm_{code}"),
-        InlineKeyboardButton("❌ إلغاء", callback_data="cancel")
-    ]]
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ موافق", callback_data=f"confirm_{code}"),
+            InlineKeyboardButton("❌ إلغاء", callback_data="cancel")
+        ]
+    ])
+
     update.message.reply_text(
         f"{o['details']}\n💵 {o['price']}",
-        reply_markup=InlineKeyboardMarkup(kb)
+        reply_markup=kb
     )
 
 def deal_buttons(update: Update, context: CallbackContext):
