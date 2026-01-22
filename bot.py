@@ -12,7 +12,7 @@ from telegram.ext import (
 )
 
 # ================== الإعدادات ==================
-TOKEN = "7566025573:AAGzFF5CJX28k--RPdECCJD_6aaxoCZ0G2c"
+TOKEN = "7566025573:AAGBL2Z832qZcrBzR1OJSX89EorkrXsQ4eo"
 ADMIN_ID = 7644436020
 CHANNEL = "@Silk7Road"
 BOT_USERNAME = "silk_7_road_bot"
@@ -159,6 +159,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.message.edit_text(
             text,
             reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown",
             disable_web_page_preview=True
         )
 
@@ -297,4 +298,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+        
