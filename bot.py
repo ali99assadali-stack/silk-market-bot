@@ -159,7 +159,6 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.message.edit_text(
             text,
             reply_markup=InlineKeyboardMarkup(kb),
-            parse_mode="Markdown",
             disable_web_page_preview=True
         )
 
