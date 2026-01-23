@@ -17,6 +17,8 @@ ADMIN_ID = 7644436020
 CHANNEL = "@Silk7Road"
 BOT_USERNAME = "silk_7_road_bot"
 
+ADMIN_OFFERS_CHANNEL = -1003895299230
+
 OFFERS_FILE = "offers.json"
 USERS_FILE = "users.json"
 
@@ -152,9 +154,9 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         kb = [
-    [InlineKeyboardButton("🔗 فتح رابط الإحالة", url=link)],
-    [InlineKeyboardButton("💸 سحب العمولة (قريبًا)", callback_data="withdraw_commission")]
-]
+            [InlineKeyboardButton("🔗 فتح رابط الإحالة", url=link)],
+            [InlineKeyboardButton("💸 سحب العمولة (قريبًا)", callback_data="withdraw_commission")]
+        ]
 
         await q.message.edit_text(
             text,
@@ -204,16 +206,71 @@ async def photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     save_json(OFFERS_FILE, offers)
 
-    kb = [[InlineKeyboardButton("🔐 دخول الصفقة", url=f"https://t.me/{BOT_USERNAME}?start=deal_{oid}")]]
+    kb = [[
+        InlineKeyboardButton("✅ موافقة", callback_data=f"approve_offer_{oid}"),
+        InlineKeyboardButton("❌ رفض", callback_data=f"reject_offer_{oid}")
+    ]]
+
     await context.bot.send_photo(
-        CHANNEL,
+        ADMIN_OFFERS_CHANNEL,
         photo=photo_id,
-        caption=f" عرض جديد\n\n{state['details']}\n💵 {state['price']}",
+        caption=(
+            "📢 طلب نشر عرض جديد\n\n"
+            f"👤 المستخدم: @{update.effective_user.username} | ID: {uid}\n\n"
+            f"{state['details']}\n💵 {state['price']}"
+        ),
         reply_markup=InlineKeyboardMarkup(kb)
     )
 
-    await update.message.reply_text("✔️ تم نشر العرض")
+    await update.message.reply_text("⏳ تم إرسال العرض للمراجعة")
     STATES.pop(uid)
+
+# ================== موافقة / رفض الأدمن ==================
+async def admin_offer_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+
+    if q.data.startswith("approve_offer_"):
+        oid = q.data.replace("approve_offer_", "")
+        o = offers.get(oid)
+        if not o:
+            return
+
+        kb = [[InlineKeyboardButton(
+            "🔐 دخول الصفقة",
+            url=f"https://t.me/{BOT_USERNAME}?start=deal_{oid}"
+        )]]
+
+        await context.bot.send_photo(
+            CHANNEL,
+            photo=o["photo"],
+            caption=f"📢 عرض جديد\n\n{o['details']}\n💵 {o['price']}",
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+
+        await context.bot.send_message(
+            o["seller_id"],
+            "✅ تم نشر عرضك بنجاح"
+        )
+
+        await q.message.edit_caption(
+            caption=q.message.caption + "\n\n✅ تم نشر العرض",
+            reply_markup=None
+        )
+
+    elif q.data.startswith("reject_offer_"):
+        oid = q.data.replace("reject_offer_", "")
+        o = offers.get(oid)
+        if o:
+            await context.bot.send_message(
+                o["seller_id"],
+                "❌ تم رفض عرضك من قبل الإدارة"
+            )
+
+        await q.message.edit_caption(
+            caption=q.message.caption + "\n\n❌ تم رفض العرض",
+            reply_markup=None
+        )
 
 # ================== دخول الصفقة ==================
 async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -265,7 +322,7 @@ async def deal_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await q.message.edit_text("✔️ تم إرسال الطلب")
 
-# ================== KEEP ALIVE (Render) ==================
+# ================== KEEP ALIVE ==================
 def keep_alive():
     web = Flask(__name__)
 
@@ -286,6 +343,7 @@ def main():
     )
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(admin_offer_buttons, pattern="^(approve_offer_|reject_offer_)"))
     app.add_handler(CallbackQueryHandler(deal_buttons, pattern="^(confirm_|cancel)"))
     app.add_handler(CallbackQueryHandler(buttons))
     app.add_handler(MessageHandler(filters.PHOTO, photos))
@@ -298,4 +356,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
