@@ -51,6 +51,24 @@ offers = load_json(OFFERS_FILE, {})
 users = load_json(USERS_FILE, {})
 STATES = {}
 
+# ================== تهيئة المستخدم (الحل) ==================
+def init_user(uid):
+    uid = str(uid)
+    if uid not in users:
+        users[uid] = {
+            "accepted": False,
+            "referrer": None,
+            "referrals": 0,
+            "ref_balance": 0,
+            "commission_balance": 0
+        }
+    else:
+        users[uid].setdefault("accepted", False)
+        users[uid].setdefault("referrer", None)
+        users[uid].setdefault("referrals", 0)
+        users[uid].setdefault("ref_balance", 0)
+        users[uid].setdefault("commission_balance", 0)
+
 # ================== تحقق الاشتراك ==================
 async def is_subscribed(uid, bot):
     try:
@@ -62,15 +80,8 @@ async def is_subscribed(uid, bot):
 # ================== /start ==================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+    init_user(uid)
     args = context.args
-
-    users.setdefault(str(uid), {
-        "accepted": False,
-        "referrer": None,
-        "referrals": 0,
-        "ref_balance": 0,
-        "commission_balance": 0
-    })
 
     if args:
         if args[0].startswith("ref_"):
@@ -117,6 +128,7 @@ async def main_menu(update: Update):
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     uid = q.from_user.id
+    init_user(uid)
     await q.answer()
 
     if q.data == "check_sub":
@@ -145,9 +157,9 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text = (
             "👥 **نظام الإحالات**\n\n"
-            f"👤 عدد الإحالات: {u['referrals']}\n"
-            f"💵 رصيد الإحالات: {u['ref_balance']}$\n"
-            f"📈 رصيد العمولة: {u['commission_balance']}$\n\n"
+            f"👤 عدد الإحالات: {u.get('referrals',0)}\n"
+            f"💵 رصيد الإحالات: {u.get('ref_balance',0)}$\n"
+            f"📈 رصيد العمولة: {u.get('commission_balance',0)}$\n\n"
             "💡 كل 50 إحالة = 1$\n"
             f"💡 عمولة {REF_COMMISSION_PERCENT}% من أرباح الصفقات\n\n"
             f"🔗 رابطك:\n{link}"
@@ -168,6 +180,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================== النصوص ==================
 async def texts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+    init_user(uid)
     if uid not in STATES:
         return
 
@@ -186,6 +199,7 @@ async def texts(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================== الصور ==================
 async def photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+    init_user(uid)
     if uid not in STATES:
         return
 
@@ -248,32 +262,21 @@ async def admin_offer_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=InlineKeyboardMarkup(kb)
         )
 
-        await context.bot.send_message(
-            o["seller_id"],
-            "✅ تم نشر عرضك بنجاح"
-        )
-
-        await q.message.edit_caption(
-            caption=q.message.caption + "\n\n✅ تم نشر العرض",
-            reply_markup=None
-        )
+        await context.bot.send_message(o["seller_id"], "✅ تم نشر عرضك بنجاح")
+        await q.message.edit_caption(caption=q.message.caption + "\n\n✅ تم نشر العرض", reply_markup=None)
 
     elif q.data.startswith("reject_offer_"):
         oid = q.data.replace("reject_offer_", "")
         o = offers.get(oid)
         if o:
-            await context.bot.send_message(
-                o["seller_id"],
-                "❌ تم رفض عرضك من قبل الإدارة"
-            )
+            await context.bot.send_message(o["seller_id"], "❌ تم رفض عرضك من قبل الإدارة")
 
-        await q.message.edit_caption(
-            caption=q.message.caption + "\n\n❌ تم رفض العرض",
-            reply_markup=None
-        )
+        await q.message.edit_caption(caption=q.message.caption + "\n\n❌ تم رفض العرض", reply_markup=None)
 
 # ================== دخول الصفقة ==================
 async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    init_user(uid)
     code = context.args[0].replace("deal_", "")
     if code not in offers:
         await update.message.reply_text("❌ العرض غير موجود")
@@ -285,13 +288,15 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("❌ إلغاء", callback_data="cancel")
     ]]
     await update.message.reply_text(
-        f"🔐 صفقه خاصه يتم التحويل الى محفظه الأدره ويحجز المبلغ حتى التأكد ان البائع سلمك العرض اصولا نقوم بتحويل المبلغ اليه في حال اخل البائع بشروط الصفقه المتفق عليها نقوم بأرجاع المبلغ كاملا اذا كنت متأكد من الشراء اضغط موافق ليتم التواصل معك..\n\n{o['details']}\n💵 {o['price']}",
+        f"🔐 صفقه خاصه يتم التحويل الى محفظه الأدره ويحجز المبلغ حتى التأكد...\n\n{o['details']}\n💵 {o['price']}",
         reply_markup=InlineKeyboardMarkup(kb)
     )
 
 # ================== أزرار الصفقة ==================
 async def deal_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
+    buyer = q.from_user.id
+    init_user(buyer)
     await q.answer()
 
     if q.data == "cancel":
@@ -304,8 +309,7 @@ async def deal_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text("❌ الصفقة غير موجودة")
             return
 
-        buyer = q.from_user.id
-        ref = users[str(buyer)]["referrer"]
+        ref = users[str(buyer)].get("referrer")
 
         if ref:
             commission = (float(o["price"]) * REF_COMMISSION_PERCENT) / 100
